@@ -12,7 +12,49 @@ st.set_page_config(page_title="Traductor de Lenguaje de Señas - Escuelas Inclus
 
 st.title("✋ Traductor de Lenguaje de Señas en Tiempo Real")
 st.markdown("### Proyecto escolar para la inclusión de estudiantes sordos en las aulas.")
-st.write("Permite que la cámara detecte tus manos y traduzca las señas educativas.")
+
+with st.container(border=True):
+    st.markdown("## 📌 ¿Para qué sirve este proyecto?")
+    st.write(
+        "Este traductor usa una cámara y una inteligencia artificial entrenada en Python "
+        "para reconocer lengua de señas y convertirla en texto al instante. La idea es simple: "
+        "que una conversación en clase no se detenga porque uno de los estudiantes no puede "
+        "escuchar o hablar de la forma tradicional."
+    )
+
+    st.markdown("#### 👥 ¿A quiénes ayudamos?")
+    col_a, col_b, col_c = st.columns(3)
+    col_a.markdown("**🧑‍🎓 Estudiantes sordos**\n\nPara que puedan comunicarse con sus compañeros sin depender siempre de un intérprete.")
+    col_b.markdown("**🧑‍🏫 Profesores**\n\nPara entender lo que un estudiante les está diciendo en lengua de señas, en el momento.")
+    col_c.markdown("**🧑‍🤝‍🧑 Compañeros de clase**\n\nPara que todo el salón pueda participar en la misma conversación, sin barreras.")
+
+    st.markdown("#### 💡 ¿Por qué es importante?")
+    st.write(
+        "Muchos estudiantes sordos no cuentan con un intérprete de lengua de señas disponible "
+        "todo el tiempo en su escuela. Eso los deja por fuera de conversaciones cotidianas, "
+        "explicaciones espontáneas o simplemente hacer una pregunta rápida en clase. Este proyecto "
+        "busca reducir esa barrera usando solo una cámara común, sin equipos costosos."
+    )
+
+    st.markdown("#### ⚙️ ¿Cómo funciona?")
+    paso1, paso2, paso3 = st.columns(3)
+    with paso1:
+        st.markdown("**1. Captura**")
+        st.caption("La cámara detecta la mano y sus puntos clave mientras se hace la seña.")
+    with paso2:
+        st.markdown("**2. Reconocimiento**")
+        st.caption("La IA compara ese movimiento contra las señas que aprendió previamente.")
+    with paso3:
+        st.markdown("**3. Traducción**")
+        st.caption("El texto aparece al instante, tanto sobre el video como en el panel de resultado.")
+
+    st.markdown("#### 👨‍💻 Quiénes hicimos este proyecto")
+    st.write("Nombre integrante 1 · Nombre integrante 2 · Nombre integrante 3")
+
+    st.markdown("#### 📞 Soporte")
+    st.write("¿Dudas o problemas usando el traductor? Escríbenos al 300 000 0000")
+
+st.write("")
 
 # --- CONSTANTES (igual que en video_en_vivo.py) ---
 CARPETA_DATASET = "videos_dataset"
