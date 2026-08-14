@@ -1,5 +1,6 @@
 import streamlit as st
 from streamlit_webrtc import webrtc_streamer, RTCConfiguration, VideoProcessorBase, WebRtcMode
+from streamlit_autorefresh import st_autorefresh
 import cv2
 import mediapipe as mp
 import numpy as np
@@ -9,52 +10,6 @@ import av
 
 # --- CONFIGURACIÓN DE LA PÁGINA WEB ---
 st.set_page_config(page_title="Traductor de Lenguaje de Señas - Escuelas Inclusivas", layout="wide")
-
-st.title("✋ Traductor de Lenguaje de Señas en Tiempo Real")
-st.markdown("### Proyecto escolar para la inclusión de estudiantes sordos en las aulas.")
-
-with st.container(border=True):
-    st.markdown("## 📌 ¿Para qué sirve este proyecto?")
-    st.write(
-        "Este traductor usa una cámara y una inteligencia artificial entrenada en Python "
-        "para reconocer lengua de señas y convertirla en texto al instante. La idea es simple: "
-        "que una conversación en clase no se detenga porque uno de los estudiantes no puede "
-        "escuchar o hablar de la forma tradicional."
-    )
-
-    st.markdown("#### 👥 ¿A quiénes ayudamos?")
-    col_a, col_b, col_c = st.columns(3)
-    col_a.markdown("**🧑‍🎓 Estudiantes sordos**\n\nPara que puedan comunicarse con sus compañeros sin depender siempre de un intérprete.")
-    col_b.markdown("**🧑‍🏫 Profesores**\n\nPara entender lo que un estudiante les está diciendo en lengua de señas, en el momento.")
-    col_c.markdown("**🧑‍🤝‍🧑 Compañeros de clase**\n\nPara que todo el salón pueda participar en la misma conversación, sin barreras.")
-
-    st.markdown("#### 💡 ¿Por qué es importante?")
-    st.write(
-        "Muchos estudiantes sordos no cuentan con un intérprete de lengua de señas disponible "
-        "todo el tiempo en su escuela. Eso los deja por fuera de conversaciones cotidianas, "
-        "explicaciones espontáneas o simplemente hacer una pregunta rápida en clase. Este proyecto "
-        "busca reducir esa barrera usando solo una cámara común, sin equipos costosos."
-    )
-
-    st.markdown("#### ⚙️ ¿Cómo funciona?")
-    paso1, paso2, paso3 = st.columns(3)
-    with paso1:
-        st.markdown("**1. Captura**")
-        st.caption("La cámara detecta la mano y sus puntos clave mientras se hace la seña.")
-    with paso2:
-        st.markdown("**2. Reconocimiento**")
-        st.caption("La IA compara ese movimiento contra las señas que aprendió previamente.")
-    with paso3:
-        st.markdown("**3. Traducción**")
-        st.caption("El texto aparece al instante, tanto sobre el video como en el panel de resultado.")
-
-    st.markdown("#### 👨‍💻 Quiénes hicimos este proyecto")
-    st.write("Susana Fontecha · Miguel Gaviria · Isabela Meneses · Sh'muel Ospina · Miguel Rivera")
-
-    st.markdown("#### 📞 Soporte")
-    st.write("¿Dudas o problemas usando el traductor? Escríbenos al 305 3805159 o 302 6980645")
-
-st.write("")
 
 # --- CONSTANTES (igual que en video_en_vivo.py) ---
 CARPETA_DATASET = "videos_dataset"
@@ -149,7 +104,7 @@ class SignLanguageProcessor(VideoProcessorBase):
         self.frase_traducida = []
         self.ultima_palabra = ""
         self.tiempo_bloqueo = 0.0
-        self.modo_actual = "LETRAS"  # se actualiza desde la barra lateral
+        self.modo_actual = "LETRAS"  # se actualiza desde el panel lateral
         self.ultimo_texto_estado = "Esperando seña..."
 
     # --- controles llamados desde los botones de Streamlit ---
@@ -261,8 +216,16 @@ class SignLanguageProcessor(VideoProcessorBase):
         return av.VideoFrame.from_ndarray(image, format="bgr24")
 
 
-# --- INTERFAZ VISUAL DE STREAMLIT ---
-col1, col2 = st.columns([2, 1])
+# =========================================================================
+# 1) LO PRIMERO QUE SE VE: título breve + el traductor funcionando
+# =========================================================================
+st.title("✋ Traductor de Lenguaje de Señas en Tiempo Real")
+st.markdown(
+    "Traduce lengua de señas a texto al instante, usando solo una cámara. "
+    "Proyecto escolar para la inclusión de estudiantes sordos en el aula."
+)
+
+col1, col2 = st.columns([1.3, 1])
 
 with col1:
     st.subheader("📹 Cámara en Directo")
@@ -275,7 +238,10 @@ with col1:
         mode=WebRtcMode.SENDRECV,
         rtc_configuration=RTC_CONFIGURATION,
         video_processor_factory=lambda: SignLanguageProcessor(base_datos_videos),
-        media_stream_constraints={"video": True, "audio": False}
+        media_stream_constraints={
+            "video": {"width": {"ideal": 480}, "height": {"ideal": 360}},
+            "audio": False,
+        },
     )
 
 with col2:
@@ -287,25 +253,70 @@ with col2:
 
     st.info("Colócate frente a la cámara y realiza una seña registrada en el dataset.")
 
-    cuadro_texto = st.empty()
+    # Auto-actualización: refresca este bloque cada segundo mientras la
+    # cámara esté encendida, sin necesidad de un botón manual.
+    if ctx.state.playing:
+        st_autorefresh(interval=1000, key="refresco_texto")
 
-    b1, b2, b3, b4 = st.columns(4)
+    cuadro_texto = st.empty()
+    if ctx.video_processor:
+        cuadro_texto.markdown(f"### **Texto:** *{ctx.video_processor.texto_actual()}*")
+    else:
+        cuadro_texto.markdown("### **Texto:** *(Inicia la cámara para comenzar)*")
+
+    b1, b2, b3 = st.columns(3)
     if b1.button("␣ Espacio") and ctx.video_processor:
         ctx.video_processor.agregar_espacio()
     if b2.button("⌫ Borrar") and ctx.video_processor:
         ctx.video_processor.borrar_ultimo()
     if b3.button("🗑️ Limpiar") and ctx.video_processor:
         ctx.video_processor.limpiar_todo()
-    if b4.button("🔄 Actualizar texto"):
-        pass  # solo fuerza el rerender de Streamlit
 
-    if ctx.video_processor:
-        cuadro_texto.markdown(f"### **Texto:** *{ctx.video_processor.texto_actual()}*")
-    else:
-        cuadro_texto.markdown("### **Texto:** *(Inicia la cámara para comenzar)*")
+    st.caption("El texto también aparece sobre el video, en tiempo real.")
 
-    st.caption("El texto se actualiza directamente sobre el video. Usa '🔄 Actualizar texto' para reflejarlo también aquí.")
+st.write("")
+st.divider()
 
-    st.markdown("---")
-    st.markdown("### 💡 Enfoque Pedagógico")
-    st.write("Este sistema apoya la integración escolar permitiendo una comunicación visual accesible e inmediata.")
+# =========================================================================
+# 2) DESPUÉS: toda la explicación del proyecto
+# =========================================================================
+with st.container(border=True):
+    st.markdown("## 📌 ¿Para qué sirve este proyecto?")
+    st.write(
+        "Este traductor usa una cámara y una inteligencia artificial entrenada en Python "
+        "para reconocer lengua de señas y convertirla en texto al instante. La idea es simple: "
+        "que una conversación en clase no se detenga porque uno de los estudiantes no puede "
+        "escuchar o hablar de la forma tradicional."
+    )
+
+    st.markdown("#### 👥 ¿A quiénes ayudamos?")
+    col_a, col_b, col_c = st.columns(3)
+    col_a.markdown("**🧑‍🎓 Estudiantes sordos**\n\nPara que puedan comunicarse con sus compañeros sin depender siempre de un intérprete.")
+    col_b.markdown("**🧑‍🏫 Profesores**\n\nPara entender lo que un estudiante les está diciendo en lengua de señas, en el momento.")
+    col_c.markdown("**🧑‍🤝‍🧑 Compañeros de clase**\n\nPara que todo el salón pueda participar en la misma conversación, sin barreras.")
+
+    st.markdown("#### 💡 ¿Por qué es importante?")
+    st.write(
+        "Muchos estudiantes sordos no cuentan con un intérprete de lengua de señas disponible "
+        "todo el tiempo en su escuela. Eso los deja por fuera de conversaciones cotidianas, "
+        "explicaciones espontáneas o simplemente hacer una pregunta rápida en clase. Este proyecto "
+        "busca reducir esa barrera usando solo una cámara común, sin equipos costosos."
+    )
+
+    st.markdown("#### ⚙️ ¿Cómo funciona?")
+    paso1, paso2, paso3 = st.columns(3)
+    with paso1:
+        st.markdown("**1. Captura**")
+        st.caption("La cámara detecta la mano y sus puntos clave mientras se hace la seña.")
+    with paso2:
+        st.markdown("**2. Reconocimiento**")
+        st.caption("La IA compara ese movimiento contra las señas que aprendió previamente.")
+    with paso3:
+        st.markdown("**3. Traducción**")
+        st.caption("El texto aparece al instante, tanto sobre el video como en el panel de resultado.")
+
+    st.markdown("#### 👨‍💻 Quiénes hicimos este proyecto")
+    st.write("Nombre integrante 1 · Nombre integrante 2 · Nombre integrante 3")
+
+    st.markdown("#### 📞 Soporte")
+    st.write("¿Dudas o problemas usando el traductor? Escríbenos al 300 000 0000")
