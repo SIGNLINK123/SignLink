@@ -319,4 +319,4 @@ with st.container(border=True):
     st.write("Susana Fontecha · Miguel Gaviria · Isabela Meneses · Sh'muel Ospina · Miguel Rivera")
 
     st.markdown("#### 📞 Soporte")
-    st.write("¿Dudas o problemas usando el traductor? Escríbenos al 305 3805159 o 302 6980645")
+    st.write("¿Dudas o problemas usando el traductor? Escríbenos al 305 3805159")
