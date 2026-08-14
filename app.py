@@ -49,10 +49,10 @@ with st.container(border=True):
         st.caption("El texto aparece al instante, tanto sobre el video como en el panel de resultado.")
 
     st.markdown("#### 👨‍💻 Quiénes hicimos este proyecto")
-    st.write("Nombre integrante 1 · Nombre integrante 2 · Nombre integrante 3")
+    st.write("Susana Fontecha · Miguel Gaviria · Isabela Meneses · Sh'muel Ospina · Miguel Rivera")
 
     st.markdown("#### 📞 Soporte")
-    st.write("¿Dudas o problemas usando el traductor? Escríbenos al 300 000 0000")
+    st.write("¿Dudas o problemas usando el traductor? Escríbenos al 305 3805159 o 302 6980645")
 
 st.write("")
 
