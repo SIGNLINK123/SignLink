@@ -163,13 +163,14 @@ def calcular_similitud_forma(secuencia_actual, secuencia_referencia):
 mp_hands = mp.solutions.hands
 mp_drawing = mp.solutions.drawing_utils
 
-# --- CLASE PROCESADORA DE VIDEO ---
+# --- EN LA SECCIÓN DEL PROCESADOR (SignLanguageProcessor) ---
 class SignLanguageProcessor(VideoProcessorBase):
     def __init__(self, base_datos):
         self.hands = mp_hands.Hands(
             static_image_mode=False,
             max_num_hands=2,
-            min_detection_confidence=0.6
+            min_detection_confidence=0.5, # Reducir ligeramente para ganar velocidad
+            min_tracking_confidence=0.5
         )
         self.base_datos = base_datos
         self.buffer_fotogramas = []
@@ -178,95 +179,97 @@ class SignLanguageProcessor(VideoProcessorBase):
         self.tiempo_bloqueo = 0.0
         self.modo_actual = "LETRAS"
         self.ultimo_texto_estado = "Esperando seña..."
+        self.frame_counter = 0  # Contador para saltar procesamiento pesado
 
-    def agregar_espacio(self):
-        self.frase_traducida.append(" ")
-        self.ultima_palabra = ""
-
-    def borrar_ultimo(self):
-        if self.frase_traducida:
-            self.frase_traducida.pop()
-        self.ultima_palabra = ""
-
-    def limpiar_todo(self):
-        self.frase_traducida = []
-        self.buffer_fotogramas = []
-        self.ultima_palabra = ""
-
-    def texto_actual(self):
-        if self.modo_actual == "LETRAS":
-            return "".join(self.frase_traducida) if self.frase_traducida else "(esperando deletreo...)"
-        return " ".join(self.frase_traducida) if self.frase_traducida else "(esperando gesto...)"
+    # ... (mantén tus métodos agregar_espacio, borrar_ultimo, etc.) ...
 
     def recv(self, frame: av.VideoFrame) -> av.VideoFrame:
         image = frame.to_ndarray(format="bgr24")
         image = cv2.flip(image, 1)
-        rgb_frame = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-        results = self.hands.process(rgb_frame)
+        self.frame_counter += 1
 
-        coordenadas_frame = np.zeros(DIMENSION_COORDENADAS)
-        if results.multi_hand_landmarks:
-            for hand_landmarks in results.multi_hand_landmarks:
-                mp_drawing.draw_landmarks(image, hand_landmarks, mp_hands.HAND_CONNECTIONS)
-                coordenadas_frame = normalizar_landmarks(hand_landmarks)
+        # Ejecutar MediaPipe solo cada 2 fotogramas para no saturar el procesador
+        if self.frame_counter % 2 == 0:
+            rgb_frame = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            results = self.hands.process(rgb_frame)
 
-        self.buffer_fotogramas.append(coordenadas_frame)
-        if len(self.buffer_fotogramas) > FRAMES_POR_VIDEO:
-            self.buffer_fotogramas.pop(0)
+            coordenadas_frame = np.zeros(DIMENSION_COORDENADAS)
+            if results.multi_hand_landmarks:
+                for hand_landmarks in results.multi_hand_landmarks:
+                    mp_drawing.draw_landmarks(image, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+                    coordenadas_frame = normalizar_landmarks(hand_landmarks)
 
-        texto_ia = "Escaneando gesto..."
-        color_ia = (0, 255, 255)
-        tiempo_espera = 0.8 if self.modo_actual == "LETRAS" else 1.2
+            self.buffer_fotogramas.append(coordenadas_frame)
+            if len(self.buffer_fotogramas) > FRAMES_POR_VIDEO:
+                self.buffer_fotogramas.pop(0)
 
-        if (len(self.buffer_fotogramas) == FRAMES_POR_VIDEO
-                and (time.time() - self.tiempo_bloqueo > tiempo_espera)
-                and self.base_datos):
+            # Lógica de detección e IA...
+            tiempo_espera = 0.8 if self.modo_actual == "LETRAS" else 1.2
+            if (len(self.buffer_fotogramas) == FRAMES_POR_VIDEO
+                    and (time.time() - self.tiempo_bloqueo > tiempo_espera)
+                    and self.base_datos):
 
-            rafaga_actual = np.array(self.buffer_fotogramas)
-            mejor_palabra = "Desconocido"
-            max_similitud = -1.0
-            segunda_similitud = -1.0
+                rafaga_actual = np.array(self.buffer_fotogramas)
+                mejor_palabra = "Desconocido"
+                max_similitud = -1.0
+                segunda_similitud = -1.0
 
-            if np.count_nonzero(rafaga_actual) > (FRAMES_POR_VIDEO * DIMENSION_COORDENADAS * 0.5):
-                for palabra, videos_referencia in self.base_datos.items():
-                    es_letra = palabra.upper() in LETRAS_ABC
-                    if self.modo_actual == "LETRAS" and not es_letra:
-                        continue
-                    elif self.modo_actual == "PALABRAS" and es_letra:
-                        continue
+                if np.count_nonzero(rafaga_actual) > (FRAMES_POR_VIDEO * DIMENSION_COORDENADAS * 0.5):
+                    for palabra, videos_referencia in self.base_datos.items():
+                        es_letra = palabra.upper() in LETRAS_ABC
+                        if self.modo_actual == "LETRAS" and not es_letra:
+                            continue
+                        elif self.modo_actual == "PALABRAS" and es_letra:
+                            continue
 
-                    mejor_de_esta_palabra = -1.0
-                    for v_ref in videos_referencia:
-                        if self.modo_actual == "LETRAS":
-                            similitud = calcular_similitud_forma(rafaga_actual, v_ref)
-                        else:
-                            similitud = calcular_similitud_coseno(rafaga_actual, v_ref)
-                        if similitud > mejor_de_esta_palabra:
-                            mejor_de_esta_palabra = similitud
+                        mejor_de_esta_palabra = -1.0
+                        for v_ref in videos_referencia:
+                            similitud = calcular_similitud_forma(rafaga_actual, v_ref) if self.modo_actual == "LETRAS" else calcular_similitud_coseno(rafaga_actual, v_ref)
+                            if similitud > mejor_de_esta_palabra:
+                                mejor_de_esta_palabra = similitud
 
-                    if mejor_de_esta_palabra > max_similitud:
-                        segunda_similitud = max_similitud
-                        max_similitud = mejor_de_esta_palabra
-                        mejor_palabra = palabra
-                    elif mejor_de_esta_palabra > segunda_similitud:
-                        segunda_similitud = mejor_de_esta_palabra
+                        if mejor_de_esta_palabra > max_similitud:
+                            segunda_similitud = max_similitud
+                            max_similitud = mejor_de_esta_palabra
+                            mejor_palabra = palabra
+                        elif mejor_de_esta_palabra > segunda_similitud:
+                            segunda_similitud = mejor_de_esta_palabra
 
-            gana_con_margen = (max_similitud - segunda_similitud) > 0.02
-            if max_similitud > 0.90 and mejor_palabra != "Desconocido" and gana_con_margen:
-                texto_ia = f"DETECTADO: {mejor_palabra.upper()} ({int(max_similitud * 100)}%)"
-                color_ia = (0, 255, 0)
+                gana_con_margen = (max_similitud - segunda_similitud) > 0.02
+                if max_similitud > 0.90 and mejor_palabra != "Desconocido" and gana_con_margen:
+                    self.ultimo_texto_estado = f"DETECTADO: {mejor_palabra.upper()} ({int(max_similitud * 100)}%)"
+                    if mejor_palabra != self.ultima_palabra:
+                        self.frase_traducida.append(mejor_palabra)
+                        self.ultima_palabra = mejor_palabra
+                        self.tiempo_bloqueo = time.time()
+                else:
+                    self.ultimo_texto_estado = "Buscando seña..."
+                    self.ultima_palabra = ""
 
-                if mejor_palabra != self.ultima_palabra:
-                    self.frase_traducida.append(mejor_palabra)
-                    self.ultima_palabra = mejor_palabra
-                    self.tiempo_bloqueo = time.time()
-            else:
-                texto_ia = "Buscando seña..."
-                color_ia = (0, 0, 255)
-                self.ultima_palabra = ""
+        # Overlays en pantalla
+        cv2.rectangle(image, (0, 0), (image.shape[1], 40), (15, 23, 42), -1)
+        cv2.putText(image, self.ultimo_texto_estado, (15, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
 
-            self.ultimo_texto_estado = texto_ia
+        return av.VideoFrame.from_ndarray(image, format="bgr24")
+
+
+# --- EN LA SECCIÓN DE WEBRTC EN STREAMLIT ---
+ctx = webrtc_streamer(
+    key="sign-language-v2",
+    mode=WebRtcMode.SENDRECV,
+    rtc_configuration=RTC_CONFIGURATION,
+    video_processor_factory=lambda: SignLanguageProcessor(base_datos_videos),
+    media_stream_constraints={
+        "video": {
+            "width": {"ideal": 1280, "max": 1920},
+            "height": {"ideal": 720, "max": 1080},
+            "frameRate": {"ideal": 30, "max": 60}
+        },
+        "audio": False
+    },
+    async_processing=True  # Asincrónico para no bloquear el hilo de renderizado
+)
 
         # Overlays estilizados sobre el video
         cv2.rectangle(image, (0, 0), (image.shape[1], 45), (15, 23, 42), -1)
