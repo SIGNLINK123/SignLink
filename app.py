@@ -169,7 +169,7 @@ class SignLanguageProcessor(VideoProcessorBase):
         self.hands = mp_hands.Hands(
             static_image_mode=False,
             max_num_hands=2,
-            min_detection_confidence=0.5, # Reducir ligeramente para ganar velocidad
+            min_detection_confidence=0.5,
             min_tracking_confidence=0.5
         )
         self.base_datos = base_datos
@@ -179,9 +179,26 @@ class SignLanguageProcessor(VideoProcessorBase):
         self.tiempo_bloqueo = 0.0
         self.modo_actual = "LETRAS"
         self.ultimo_texto_estado = "Esperando seña..."
-        self.frame_counter = 0  # Contador para saltar procesamiento pesado
+        self.frame_counter = 0
 
-    # ... (mantén tus métodos agregar_espacio, borrar_ultimo, etc.) ...
+    def agregar_espacio(self):
+        self.frase_traducida.append(" ")
+        self.ultima_palabra = ""
+
+    def borrar_ultimo(self):
+        if self.frase_traducida:
+            self.frase_traducida.pop()
+        self.ultima_palabra = ""
+
+    def limpiar_todo(self):
+        self.frase_traducida = []
+        self.buffer_fotogramas = []
+        self.ultima_palabra = ""
+
+    def texto_actual(self):
+        if self.modo_actual == "LETRAS":
+            return "".join(self.frase_traducida) if self.frase_traducida else "(esperando deletreo...)"
+        return " ".join(self.frase_traducida) if self.frase_traducida else "(esperando gesto...)"
 
     def recv(self, frame: av.VideoFrame) -> av.VideoFrame:
         image = frame.to_ndarray(format="bgr24")
@@ -189,7 +206,6 @@ class SignLanguageProcessor(VideoProcessorBase):
 
         self.frame_counter += 1
 
-        # Ejecutar MediaPipe solo cada 2 fotogramas para ganar fluidez
         if self.frame_counter % 2 == 0:
             rgb_frame = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             results = self.hands.process(rgb_frame)
@@ -249,40 +265,9 @@ class SignLanguageProcessor(VideoProcessorBase):
                     self.ultimo_texto_estado = "Buscando seña..."
                     self.ultima_palabra = ""
 
-        # Overlays en pantalla (fuera del 'if' para dibujarse en cada frame)
         cv2.rectangle(image, (0, 0), (image.shape[1], 45), (15, 23, 42), -1)
         cv2.putText(image, self.ultimo_texto_estado, (15, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 255), 2)
 
-        texto_frase = self.texto_actual()
-        alto = image.shape[0]
-        cv2.rectangle(image, (0, alto - 45), (image.shape[1], alto), (255, 255, 255), -1)
-        cv2.putText(image, f"Traduccion: {texto_frase}", (15, alto - 15),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.65, (15, 23, 42), 2)
-
-        return av.VideoFrame.from_ndarray(image, format="bgr24")
-
-
-# --- EN LA SECCIÓN DE WEBRTC EN STREAMLIT ---
-ctx = webrtc_streamer(
-    key="sign-language-v2",
-    mode=WebRtcMode.SENDRECV,
-    rtc_configuration=RTC_CONFIGURATION,
-    video_processor_factory=lambda: SignLanguageProcessor(base_datos_videos),
-    media_stream_constraints={
-        "video": {
-            "width": {"ideal": 1280, "max": 1920},
-            "height": {"ideal": 720, "max": 1080},
-            "frameRate": {"ideal": 30, "max": 60}
-        },
-        "audio": False
-    },
-    async_processing=True  # Asincrónico para no bloquear el hilo de renderizado
-)
-
-        # Overlays estilizados sobre el video
-        cv2.rectangle(image, (0, 0), (image.shape[1], 45), (15, 23, 42), -1)
-        cv2.putText(image, self.ultimo_texto_estado, (15, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.65, color_ia, 2)
-        
         texto_frase = self.texto_actual()
         alto = image.shape[0]
         cv2.rectangle(image, (0, alto - 45), (image.shape[1], alto), (255, 255, 255), -1)
