@@ -189,7 +189,7 @@ class SignLanguageProcessor(VideoProcessorBase):
 
         self.frame_counter += 1
 
-        # Ejecutar MediaPipe solo cada 2 fotogramas para no saturar el procesador
+        # Ejecutar MediaPipe solo cada 2 fotogramas para ganar fluidez
         if self.frame_counter % 2 == 0:
             rgb_frame = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             results = self.hands.process(rgb_frame)
@@ -204,7 +204,6 @@ class SignLanguageProcessor(VideoProcessorBase):
             if len(self.buffer_fotogramas) > FRAMES_POR_VIDEO:
                 self.buffer_fotogramas.pop(0)
 
-            # Lógica de detección e IA...
             tiempo_espera = 0.8 if self.modo_actual == "LETRAS" else 1.2
             if (len(self.buffer_fotogramas) == FRAMES_POR_VIDEO
                     and (time.time() - self.tiempo_bloqueo > tiempo_espera)
@@ -225,7 +224,10 @@ class SignLanguageProcessor(VideoProcessorBase):
 
                         mejor_de_esta_palabra = -1.0
                         for v_ref in videos_referencia:
-                            similitud = calcular_similitud_forma(rafaga_actual, v_ref) if self.modo_actual == "LETRAS" else calcular_similitud_coseno(rafaga_actual, v_ref)
+                            if self.modo_actual == "LETRAS":
+                                similitud = calcular_similitud_forma(rafaga_actual, v_ref)
+                            else:
+                                similitud = calcular_similitud_coseno(rafaga_actual, v_ref)
                             if similitud > mejor_de_esta_palabra:
                                 mejor_de_esta_palabra = similitud
 
@@ -247,9 +249,15 @@ class SignLanguageProcessor(VideoProcessorBase):
                     self.ultimo_texto_estado = "Buscando seña..."
                     self.ultima_palabra = ""
 
-        # Overlays en pantalla
-        cv2.rectangle(image, (0, 0), (image.shape[1], 40), (15, 23, 42), -1)
-        cv2.putText(image, self.ultimo_texto_estado, (15, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+        # Overlays en pantalla (fuera del 'if' para dibujarse en cada frame)
+        cv2.rectangle(image, (0, 0), (image.shape[1], 45), (15, 23, 42), -1)
+        cv2.putText(image, self.ultimo_texto_estado, (15, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 255), 2)
+
+        texto_frase = self.texto_actual()
+        alto = image.shape[0]
+        cv2.rectangle(image, (0, alto - 45), (image.shape[1], alto), (255, 255, 255), -1)
+        cv2.putText(image, f"Traduccion: {texto_frase}", (15, alto - 15),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.65, (15, 23, 42), 2)
 
         return av.VideoFrame.from_ndarray(image, format="bgr24")
 
