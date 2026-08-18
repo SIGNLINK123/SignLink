@@ -206,6 +206,73 @@ class SignLanguageProcessor(VideoProcessorBase):
 
         self.frame_counter += 1
 
+        # Salta frames para la IA (procesa 1 de cada 3 frames),
+        # esto mantiene la CPU liviana y la fluidez al máximo.
+        if self.frame_counter % 3 == 0:
+            rgb_frame = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            results = self.hands.process(rgb_frame)
+
+            coordenadas_frame = np.zeros(DIMENSION_COORDENADAS)
+            if results.multi_hand_landmarks:
+                for hand_landmarks in results.multi_hand_landmarks:
+                    mp_drawing.draw_landmarks(image, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+                    coordenadas_frame = normalizar_landmarks(hand_landmarks)
+
+            self.buffer_fotogramas.append(coordenadas_frame)
+            if len(self.buffer_fotogramas) > FRAMES_POR_VIDEO:
+                self.buffer_fotogramas.pop(0)
+
+            tiempo_espera = 0.8 if self.modo_actual == "LETRAS" else 1.2
+            if (len(self.buffer_fotogramas) == FRAMES_POR_VIDEO
+                    and (time.time() - self.tiempo_bloqueo > tiempo_espera)
+                    and self.base_datos):
+
+                rafaga_actual = np.array(self.buffer_fotogramas)
+                mejor_palabra = "Desconocido"
+                max_similitud = -1.0
+                segunda_similitud = -1.0
+
+                if np.count_nonzero(rafaga_actual) > (FRAMES_POR_VIDEO * DIMENSION_COORDENADAS * 0.5):
+                    for palabra, videos_referencia in self.base_datos.items():
+                        es_letra = palabra.upper() in LETRAS_ABC
+                        if self.modo_actual == "LETRAS" and not es_letra:
+                            continue
+                        elif self.modo_actual == "PALABRAS" and es_letra:
+                            continue
+
+                        mejor_de_esta_palabra = -1.0
+                        for v_ref in videos_referencia:
+                            if self.modo_actual == "LETRAS":
+                                similitud = calcular_similitud_forma(rafaga_actual, v_ref)
+                            else:
+                                similitud = calcular_similitud_coseno(rafaga_actual, v_ref)
+                            if similitud > mejor_de_esta_palabra:
+                                mejor_de_esta_palabra = similitud
+
+                        if mejor_de_esta_palabra > max_similitud:
+                            segunda_similitud = max_similitud
+                            max_similitud = mejor_de_esta_palabra
+                            mejor_palabra = palabra
+                        elif mejor_de_esta_palabra > segunda_similitud:
+                            segunda_similitud = mejor_de_esta_palabra
+
+                gana_con_margen = (max_similitud - segunda_similitud) > 0.02
+                if max_similitud > 0.90 and mejor_palabra != "Desconocido" and gana_con_margen:
+                    self.ultimo_texto_estado = f"DETECTADO: {mejor_palabra.upper()} ({int(max_similitud * 100)}%)"
+                    if mejor_palabra != self.ultima_palabra:
+                        self.frase_traducida.append(mejor_palabra)
+                        self.ultima_palabra = mejor_palabra
+                        self.tiempo_bloqueo = time.time()
+                else:
+                    self.ultimo_texto_estado = "Buscando seña..."
+                    self.ultima_palabra = ""
+
+        # Dibuja únicamente la barra de estado superior en OpenCV para no ralentizar el video
+        cv2.rectangle(image, (0, 0), (image.shape[1], 40), (15, 23, 42), -1)
+        cv2.putText(image, self.ultimo_texto_estado, (15, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 255), 2)
+
+        return av.VideoFrame.from_ndarray(image, format="bgr24")
+
         if self.frame_counter % 2 == 0:
             rgb_frame = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             results = self.hands.process(rgb_frame)
@@ -324,18 +391,27 @@ with col_video:
     st.markdown('<div class="glass-card">', unsafe_allow_html=True)
     st.subheader("📹 Entrada de Cámara Web")
     
-    RTC_CONFIGURATION = RTCConfiguration(
-        {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
-    )
+    # --- CONFIGURACIÓN DE WEBRTC PARA ALTA FLUIDEZ ---
+RTC_CONFIGURATION = RTCConfiguration(
+    {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
+)
 
-    ctx = webrtc_streamer(
-        key="sign-language-v2",
-        mode=WebRtcMode.SENDRECV,
-        rtc_configuration=RTC_CONFIGURATION,
-        video_processor_factory=lambda: SignLanguageProcessor(base_datos_videos),
-        media_stream_constraints={"video": True, "audio": False}
-    )
-    st.markdown('</div>', unsafe_allow_html=True)
+ctx = webrtc_streamer(
+    key="signlink-hd-stream",
+    mode=WebRtcMode.SENDRECV,
+    rtc_configuration=RTC_CONFIGURATION,
+    video_processor_factory=lambda: SignLanguageProcessor(base_datos_videos),
+    # Forzamos compresión ligera y FPS altos desde el navegador
+    media_stream_constraints={
+        "video": {
+            "width": {"ideal": 1280, "min": 640},
+            "height": {"ideal": 720, "min": 480},
+            "frameRate": {"ideal": 30, "min": 24}
+        },
+        "audio": False
+    },
+    async_processing=True, # Procesa la IA en un hilo separado sin congelar la cámara
+)
 
 with col_panel:
     st.markdown('<div class="glass-card">', unsafe_allow_html=True)
